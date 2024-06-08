@@ -1,0 +1,27 @@
+/*
+ * Copyright 2023, UNSW
+ * Copyright 2024, Yifei Zhan
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
+/ {
+    chosen {
+        seL4,kernel-devices =
+            &{/soc/clint@2000000},
+            &{/soc/interrupt-controller@c000000};
+    };
+
+    /* The size and address of the CLINT is from U-Boot  */
+    /* https://github.com/smaeul/linux/blob/d1/wip/arch/riscv/boot/dts/allwinner/sun20i-d1.dtsi */
+    soc {
+        clint@14000000 {
+            compatible = "riscv,cpu-intc",
+                         "thead,c900-clint",
+                         "allwinner,sun20i-d1-clint";
+            reg = <0x14000000 0xc000>;
+            interrupts-extended = <&cpu0_intc 3>,
+                                  <&cpu0_intc 7>;
+        };
+    };
+};
