@@ -34,6 +34,11 @@
 #include <mode/machine/debug.h>
 #endif
 
+// benchmarking infra
+#define PMU_READ(reg, v) asm volatile("mrs %0, " reg :  "=r"(v));
+#define SEL4BENCH_READ_CCNT(var) PMU_READ("PMCCNTR_EL0", var);
+#define SEL4BENCH_READ_PMXEVTYPER_EL0(var) PMU_READ("PMXEVTYPER_EL0", var);
+
 /* The haskell function 'handleEvent' is split into 'handleXXX' variants
  * for each event causing a kernel entry */
 
@@ -201,6 +206,12 @@ exception_t handleUnknownSyscall(word_t w)
 #endif /* CONFIG_DEBUG_BUILD */
 #endif /* CONFIG_BENCHMARK_TRACK_UTILISATION */
     case SysBenchmarkNullSyscall:
+	/* hijack NullSyscall for re-enable user level access to PMU */
+	/* Linux will disable this bit on boot so we need to toggle again it after
+	 * Linux boots */
+	uint32_t val = BIT(0);
+	MSR("PMUSERENR_EL0", val);
+	// printf("Kernel print: enabled PMU, cnt = %d\n", cnt);
         return EXCEPTION_NONE;
     default:
         break; /* syscall is not for benchmarking */
