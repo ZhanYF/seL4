@@ -689,7 +689,7 @@ def generate_stub(arch, wordsize, interface_name, method_name, method_id, input_
     #   ...
     #
     if max(num_mrs, len(input_expressions)) > 0:
-        if method_name == "WriteRegisters":
+        if arch == "aarch64" and method_name == "WriteRegisters":
           result.append("\t/* Marshal and initialise parameters with limiter. */")
           # Initialise in-register parameters
           for i in range(num_mrs):
@@ -764,7 +764,7 @@ def generate_stub(arch, wordsize, interface_name, method_name, method_id, input_
         for (param, words) in unmashalled_params:
             if param.type.pass_by_reference():
                 members = struct_members(param.type, structs)
-                if method_name == "ReadRegisters":
+                if arch == "aarch64" and method_name == "ReadRegisters":
                     for i in range(len(source_words)):
                         result.append("\t%s->%s = %s;" %
                                       (param.name, members[i], words[i] % source_words))
