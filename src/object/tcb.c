@@ -59,7 +59,7 @@ static inline void addToBitmap(word_t cpu, word_t dom, word_t prio)
 
     NODE_STATE_ON_CORE(ksReadyQueuesL1Bitmap[dom], cpu) |= BIT(l1index);
     /* we invert the l1 index when accessed the 2nd level of the bitmap in
-       order to increase the liklihood that high prio threads l2 index word will
+       order to increase the likelihood that high prio threads l2 index word will
        be on the same cache line as the l1 index word - this makes sure the
        fastpath is fastest for high prio threads */
     NODE_STATE_ON_CORE(ksReadyQueuesL2Bitmap[dom][l1index_inverted], cpu) |= BIT(prio & MASK(wordRadix));
@@ -1255,7 +1255,8 @@ exception_t decodeSetMCPriority(cap_t cap, word_t length, word_t *buffer)
 exception_t decodeSetTimeoutEndpoint(cap_t cap, cte_t *slot)
 {
     if (current_extra_caps.excaprefs[0] == NULL) {
-        userError("TCB SetSchedParams: Truncated message.");
+        userError("TCB SetTimeoutEndpoint: Truncated message.");
+        current_syscall_error.type = seL4_TruncatedMessage;
         return EXCEPTION_SYSCALL_ERROR;
     }
 
@@ -1332,18 +1333,23 @@ exception_t decodeSetSchedParams(cap_t cap, word_t length, word_t *buffer)
 #ifdef CONFIG_KERNEL_MCS
     tcb_t *tcb = TCB_PTR(cap_thread_cap_get_capTCBPtr(cap));
     sched_context_t *sc = NULL;
+    thread_control_flag_t update_flags = thread_control_sched_update_mcp |
+                                         thread_control_sched_update_priority |
+                                         thread_control_sched_update_fault;
     switch (cap_get_capType(scCap)) {
     case cap_sched_context_cap:
         sc = SC_PTR(cap_sched_context_cap_get_capSCPtr(scCap));
-        if (tcb->tcbSchedContext) {
-            userError("TCB Configure: tcb already has a scheduling context.");
-            current_syscall_error.type = seL4_IllegalOperation;
-            return EXCEPTION_SYSCALL_ERROR;
-        }
-        if (sc->scTcb) {
-            userError("TCB Configure: sched contextext already bound.");
-            current_syscall_error.type = seL4_IllegalOperation;
-            return EXCEPTION_SYSCALL_ERROR;
+        if (tcb->tcbSchedContext != sc) {
+            if (tcb->tcbSchedContext) {
+                userError("TCB Configure: tcb already has a scheduling context.");
+                current_syscall_error.type = seL4_IllegalOperation;
+                return EXCEPTION_SYSCALL_ERROR;
+            }
+            if (sc->scTcb) {
+                userError("TCB Configure: sched context already bound.");
+                current_syscall_error.type = seL4_IllegalOperation;
+                return EXCEPTION_SYSCALL_ERROR;
+            }
         }
         if (isBlocked(tcb) && !sc_released(sc)) {
             userError("TCB Configure: tcb blocked and scheduling context not schedulable.");
@@ -1365,6 +1371,11 @@ exception_t decodeSetSchedParams(cap_t cap, word_t length, word_t *buffer)
         return EXCEPTION_SYSCALL_ERROR;
     }
 
+    /* If we are setting or unsetting the scheduling context, update the flags */
+    if (tcb->tcbSchedContext != sc) {
+        update_flags |= thread_control_sched_update_sc;
+    }
+
     if (!validFaultHandler(fhCap)) {
         userError("TCB Configure: fault endpoint cap invalid.");
         current_syscall_error.type = seL4_InvalidCapability;
@@ -1378,11 +1389,7 @@ exception_t decodeSetSchedParams(cap_t cap, word_t length, word_t *buffer)
                TCB_PTR(cap_thread_cap_get_capTCBPtr(cap)), slot,
                fhCap, fhSlot,
                newMcp, newPrio,
-               sc,
-               thread_control_sched_update_mcp |
-               thread_control_sched_update_priority |
-               thread_control_sched_update_sc |
-               thread_control_sched_update_fault);
+               sc, update_flags);
 #else
     return invokeTCB_ThreadControl(
                TCB_PTR(cap_thread_cap_get_capTCBPtr(cap)), NULL,
@@ -1871,9 +1878,9 @@ exception_t invokeTCB_ThreadControlSched(tcb_t *target, cte_t *slot,
     }
 
     if (updateFlags & thread_control_sched_update_sc) {
-        if (sc != NULL && sc != target->tcbSchedContext) {
+        if (sc != NULL) {
             schedContext_bindTCB(sc, target);
-        } else if (sc == NULL && target->tcbSchedContext != NULL) {
+        } else if (sc == NULL) {
             schedContext_unbindTCB(target->tcbSchedContext);
         }
     }
